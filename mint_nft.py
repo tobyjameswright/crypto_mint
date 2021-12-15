@@ -7,11 +7,12 @@ def get_creds():
     """
         read in the login details from secret file
     """
-    file_data = open('pass.txt', 'r+').strip()
-    creds = json.loads(file_data)
+    with open('pass.txt', 'r') as f:
+        file_data = f.readlines()
+    creds = json.loads(file_data[0].strip())
     API_KEY = creds['API_KEY']
-    URL = creds['URL']
-    return data_clean
+    IPC_FILE = creds['URL']
+    return API_KEY, IPC_FILE
 
 
 def extract_abi(contract_add: str, API_KEY: str) -> json:
@@ -25,7 +26,7 @@ def extract_abi(contract_add: str, API_KEY: str) -> json:
                contract_add, 'apikey': API_KEY}
     data = requests.get(url, payload)
     if data.status_code == 200:
-        return data.json()
+        return json.loads(data.json()['result'])
     else:
         print(f'Error finding the smart contract, exiting with code {data.status_code}')
         sys.exit()
@@ -76,8 +77,10 @@ def main():
     amount of NFT - dynamically adjust gas based on the current gas estimates
     3) Send the transaction to the ethereum blockchain -> using local get node
     """
-    API_KEY, URL = get_creds()
+    API_KEY, IPC_FILE = get_creds()
     contract_add = input('Please enter the smart contract id: ')
+    price = int(input('Please enter the price per nft: '))
+    quantity = int(input('Please enter the total number of NFTs to mint: '))
     abi = extract_abi(contract_add, API_KEY)
     print(f'ABI for contract {contract_add} is {abi}')
     #TODO: Programmatically set the quantity and price
