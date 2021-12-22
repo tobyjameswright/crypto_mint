@@ -12,7 +12,9 @@ def get_creds():
     creds = json.loads(file_data[0].strip())
     API_KEY = creds['API_KEY']
     IPC_FILE = creds['URL']
-    return API_KEY, IPC_FILE
+    PUB_KEY = creds['PUB_KEY']
+    PRIVATE_KEY = creds['PRIVATE_KEY']
+    return API_KEY, IPC_FILE, PUB_KEY, PRIVATE_KEY
 
 
 def extract_abi(contract_add: str, API_KEY: str) -> json:
@@ -32,40 +34,56 @@ def extract_abi(contract_add: str, API_KEY: str) -> json:
         sys.exit()
 
 
-def create_transaction(IPC_FILE, contract_add, abi, quantity, price):
+def create_transaction(IPC_FILE, PUB_KEY, contract_add, abi, quantity, price):
     """
     create the transaction to send to the blockchain
     """
-    #TODO: Do we need to extract and call only the relevant mint function?
-    # How can this logic be added in a generic way?
-    # contract_obj.functions.function_name().transact()
-    # NOTE: Use .transact() for write functions and .call() for read functions
     w3 = Web3(Web3.IPCProvider(IPC_FILE))
-    #NOTE: this may need to be updated everytime
-    # the local eth node is restarted
+    price_wei = w3.toWei(price, 'ether')
     address = w3.toChecksumAddress(contract_add)
     contract = w3.eth.contract(address=address, abi=abi)
-    trans_id = contract.functions.mint(price * quantity, quantity).transact()
-    return trans_id
+    nonce = w3.eth.getTransactionCount(PUB_KEY)
+    account = w3.toChecksumAddress(PUB_KEY)
+    gas_wei = estimate_gas(w3)
+    gas_wei = 61444436997
+    transact_payload = {'nonce': nonce,
+                        'from': account
+                        'value': price_wei * quantity,
+                        'gasPrice': gas_wei}
+    func_call = contract.functions.mint(quantity)
+    txn = func_call.buildTransaction(transact_payload)
+    print(w3.eth.estimateGas(txn))
+    input()
+    return txn
 
 
-def estimate_gas():
+def sign_txn(transaction, PRIVATE_KEY):
+    """
+    sign the transaction with the PRIVATE_KEY
+    """
+    signed_txn = w3.eth.account.sign_transaction(transaction, PRIVATE_KEY)
+    return signed_txn
+
+
+def estimate_gas(w3):
     """
     estimate the optimal gas fee in order to increase chance of being accepted
     in the next block
+
+    uses built in API call to return the max fee for a prority transaction
     """
-    #TODO: Can we check for arb opportunities between marketplace and the
-    # initial mint cost?
-    pass
+    gas_wei = w3.eth.max_priority_fee
+    return gas_wei
 
 
-def send_transaction(transaction):
+def send_transaction(signed_transaction):
     """
     send the transaction to the mem pool ?? sign first with private key?
     """
     #TODO: package the transaction and sign with private key. 
     # then send the transaction to th eth mem pool
-    pass
+    result = w3.eth.send_raw_transaction(signed_transaction)
+    return result
 
 
 def main():
@@ -77,14 +95,16 @@ def main():
     amount of NFT - dynamically adjust gas based on the current gas estimates
     3) Send the transaction to the ethereum blockchain -> using local get node
     """
-    API_KEY, IPC_FILE = get_creds()
+    API_KEY, IPC_FILE, PUB_KEY, PRIVATE_KEY = get_creds()
     contract_add = input('Please enter the smart contract id: ')
     price = int(input('Please enter the price per nft: '))
     quantity = int(input('Please enter the total number of NFTs to mint: '))
     abi = extract_abi(contract_add, API_KEY)
-    print(f'ABI for contract {contract_add} is {abi}')
     #TODO: Programmatically set the quantity and price
-    create_transaction(IPC_FILE, contract_add, abi, quantity, price)
+    txn = create_transaction(IPC_FILE, PUB_KEY, contract_add, abi, quantity, price)
+    signed_txn = sign_txn(txn)
+    result = send_transaction(signed_txn)
+    print(result)
 
 
 if __name__ == "__main__":
